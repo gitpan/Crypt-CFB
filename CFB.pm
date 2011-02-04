@@ -7,16 +7,18 @@ require Exporter;
 
 @EXPORT = qw();
 
-$VERSION = 0.01;
+$VERSION = 0.02;
 
 # 
-# The object returned by Crypt::CFB->new(<key>,<algorithm>) contains:
+# The object returned by Crypt::CFB->new(<key>,<algorithm>,[iv]) contains:
 #
 #  $self->{key}: the key 
 #  $self->{algo}: instantiated object of the class <algorithm>
 #  $self->{register}: the internal state of the Cipher Feedback mode
 #  $self->{registerlength}: the length of the internal state in bytes
 #  $self->{bytes}: the number of bytes to xor per round
+#  $self->{iv}: a block of $self->{bytes} bytes, containing the
+#               Initialization Vector.
 #  $self->{cf}: anonymous subroutine without parameters. The
 #               subs in this implementation read $self->{key}
 #               and $self->{register}, apply the cryptographic
@@ -38,7 +40,7 @@ sub _statef;
 sub _reginit;
 
 sub new {
-	my ($proto, $key, $algo) = @_;
+	my ($proto, $key, $algo, $iv) = @_;
 	my $class = ref($proto) || $proto;
 	my $self = {};
 
@@ -73,6 +75,11 @@ sub new {
 	$self->{rpattern} = "x" . $self->{bytes}  .
 					    "a" . ($self->{registerlength} - $self->{bytes});
 	$self->{spattern} = "a" . $self->{bytes} . "a*";
+
+	# Store the Initialization Vector
+	if (defined($iv)) {
+		$self->{iv} = $iv;
+	}
 
 	# Initialize the internal state.
 	$self->{register} = _reginit($self);
@@ -149,7 +156,9 @@ sub _Crypt_new {
 
 sub _reginit {
 	my $self = shift;
-	return ("\x0" x $self->{registerlength});
+	my $iv = defined($self->{iv}) ? $self->{iv} : "";
+	my $remainder = $self->{registerlength} - length($iv);
+	return $iv . ("\x0" x $remainder);
 }
 
 # Per $self->{bytes} encryption/decryption 
@@ -194,7 +203,10 @@ sub decrypt {
 		
 # Reset the internal state
 sub reset {
-	my $self = shift;
+	my ($self, $iv) = @_;
+	if (defined($iv)) {
+		$self->{iv} = $iv;
+	}
 	$self->{register} = _reginit($self);
 }
 
@@ -221,6 +233,10 @@ Crypt::CFB - Encrypt Data in Cipher Feedback Mode
 
 	my $cipher = new Crypt::CFB $key, 'Crypt::Rijndael';
 
+	## Or:
+	my $iv = ''; map { $iv .= chr(rand(256)) } (0..16);
+	my $cipher = new Crypt::CFB $key, 'Crypt::Rijndael', $iv;
+
 	my $ciphertext = $cipher->encrypt($plaintext);
 	my $plaintext = $cipher->decrypt($ciphertext);
 
@@ -244,13 +260,14 @@ the C<add> method.
 
 =over 4
 
-=item C<$cipher = new Crypt::CFB $key, $algorithm>
+=item C<$cipher = new Crypt::CFB $key, $algorithm, $optional_iv>
 
 Constructs a CFB object. If C<$algorithm> is a block cipher, then
 C<$key> should be of the correct size for that cipher. In most
 cases you can inquire the block cipher module by invoking the
 C<keysize> method. If C<$algorithm> is a hash function (C<Digest::>), then
-C<$key> can be of any size.
+C<$key> can be of any size.  The optional IV can be used to further
+seed the crypto algorithm.  If no IV is given, a string of zeroes is used.
 
 =item C<$ciphertext = $cipher-E<gt>encrypt $plaintext>
 
@@ -278,6 +295,14 @@ a little baroque.
 =head1 AUTHOR
 
 Matthias Bauer <matthiasb@acm.org>
+
+=head1 CHANGES
+
+Added the use of an IV.
+
+=head1 AUTHOR
+
+Kees Jan Hermans <kees@phoezo.com>
 
 =cut
 
